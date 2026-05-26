@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1D9E75">
+<title>Medic Drone Delivery Survey</title>
+<link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #1D9E75; --green-dark: #0F6E56; --green-light: #E1F5EE; --green-text: #085041;
+    --amber: #EF9F27; --amber-light: #FAEEDA; --amber-text: #633806;
+    --red: #E24B4A; --red-light: #FCEBEB; --red-text: #791F1F;
+    --gray-50: #F7F7F6; --gray-100: #EFEFED; --gray-200: #D3D1C7;
+    --gray-400: #888780; --gray-700: #3A3A38; --gray-900: #1A1A18;
+    --radius: 10px; --radius-sm: 6px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--gray-50); color: var(--gray-900); min-height: 100vh; }
+  .top-bar { background: var(--green); position: sticky; top: 0; z-index: 100; }
+  .top-bar-inner { max-width: 720px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+  .top-bar h1 { color: #fff; font-size: 16px; font-weight: 600; flex: 1; }
+  .status-badge { font-size: 11px; padding: 4px 12px; border-radius: 20px; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: all 0.3s; }
+  .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .status-online { background: rgba(255,255,255,0.2); color: #fff; }
+  .status-online .dot { background: #9FE1CB; }
+  .status-offline { background: rgba(239,159,39,0.3); color: #FAEEDA; }
+  .status-offline .dot { background: #EF9F27; }
+  .status-syncing { background: rgba(255,255,255,0.2); color: #fff; }
+  .status-syncing .dot { background: #fff; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .progress-wrap { background: rgba(0,0,0,0.15); height: 3px; }
+  .progress-fill { height: 3px; background: rgba(255,255,255,0.8); transition: width 0.4s ease; }
+  .container { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px; }
+  .page { display: none; }
+  .page.active { display: block; }
+  .banner { border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+  .banner-offline { background: var(--amber-light); border: 1px solid var(--amber); color: var(--amber-text); }
+  .banner-synced { background: var(--green-light); border: 1px solid var(--green); color: var(--green-text); }
+  .banner-error { background: var(--red-light); border: 1px solid var(--red); color: var(--red-text); }
+  .banner-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .banner.hidden { display: none; }
+  .cover-card { background: #fff; border-radius: var(--radius); border: 1px solid var(--gray-100); padding: 32px 28px; margin-bottom: 20px; }
+  .cover-icon { width: 60px; height: 60px; background: var(--green-light); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+  .cover-card h2 { font-size: 22px; font-weight: 700; color: var(--gray-900); margin-bottom: 8px; line-height: 1.3; }
+  .cover-card .tagline { font-size: 15px; color: var(--gray-400); line-height: 1.6; margin-bottom: 20px; }
+  .info-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+  .info-pill { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gray-700); background: var(--gray-50); border: 1px solid var(--gray-100); padding: 6px 12px; border-radius: 20px; }
+  .consent-box { background: var(--green-light); border-left: 3px solid var(--green); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 14px 16px; font-size: 13px; color: var(--green-text); line-height: 1.7; margin-bottom: 24px; }
+  .consent-check { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: var(--gray-700); cursor: pointer; }
+  .consent-check input { margin-top: 2px; accent-color: var(--green); width: 16px; height: 16px; flex-shrink: 0; }
+  .section-card { background: #fff; border-radius: var(--radius); border: 1px solid var(--gray-100); margin-bottom: 16px; overflow: hidden; }
+  .section-head { background: var(--gray-50); border-bottom: 1px solid var(--gray-100); padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+  .sec-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .sec-title { font-size: 15px; font-weight: 600; color: var(--gray-900); }
+  .sec-subtitle { font-size: 12px; color: var(--gray-400); margin-top: 1px; }
+  .section-body { padding: 20px; }
+  .q { margin-bottom: 24px; }
+  .q:last-child { margin-bottom: 0; }
+  .q-label { font-size: 14px; font-weight: 600; color: var(--gray-900); margin-bottom: 6px; line-height: 1.5; }
+  .q-hint { font-size: 12px; color: var(--gray-400); margin-bottom: 10px; line-height: 1.5; }
+  .q-divider { border: none; border-top: 1px solid var(--gray-100); margin: 24px 0; }
+  .req { color: var(--red); margin-left: 2px; }
+  .options { display: flex; flex-direction: column; gap: 8px; }
+  .opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border: 1px solid var(--gray-100); border-radius: var(--radius-sm); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .opt:hover { background: var(--gray-50); border-color: var(--gray-200); }
+  .opt input[type=radio], .opt input[type=checkbox] { margin-top: 2px; accent-color: var(--green); flex-shrink: 0; width: 15px; height: 15px; }
+  .opt label { font-size: 14px; color: var(--gray-700); cursor: pointer; line-height: 1.5; }
+  .opt.selected { border-color: var(--green); background: var(--green-light); }
+  .opt.selected label { color: var(--green-text); }
+  textarea { width: 100%; border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 14px; color: var(--gray-900); font-family: inherit; resize: vertical; min-height: 90px; outline: none; transition: border-color 0.15s; background: #fff; }
+  textarea:focus { border-color: var(--green); }
+  .grid-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rtable { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
+  .rtable th { font-weight: 600; color: var(--gray-400); text-align: center; padding: 8px 6px; border-bottom: 1px solid var(--gray-100); font-size: 12px; }
+  .rtable th:first-child { text-align: left; min-width: 160px; }
+  .rtable td { padding: 10px 6px; border-bottom: 1px solid var(--gray-100); text-align: center; vertical-align: middle; }
+  .rtable tr:last-child td { border-bottom: none; }
+  .rtable td:first-child { text-align: left; font-size: 13px; color: var(--gray-700); padding-right: 12px; }
+  .rtable input[type=radio] { accent-color: var(--green); width: 16px; height: 16px; cursor: pointer; }
+  .scale-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .scale-btn { width: 46px; height: 46px; border-radius: var(--radius-sm); border: 1px solid var(--gray-200); background: #fff; font-size: 15px; font-weight: 600; color: var(--gray-400); cursor: pointer; transition: all 0.15s; }
+  .scale-btn:hover { border-color: var(--green); color: var(--green); }
+  .scale-btn.sel { background: var(--green); border-color: var(--green); color: #fff; }
+  .scale-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--gray-400); }
+  .scale-val { font-size: 13px; color: var(--green-text); font-weight: 600; margin-top: 6px; min-height: 18px; }
+  .nav-bar { display: flex; gap: 12px; margin-top: 28px; }
+  .btn { padding: 13px 28px; border-radius: var(--radius-sm); font-size: 15px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-back { background: var(--gray-100); color: var(--gray-700); }
+  .btn-back:hover { background: var(--gray-200); }
+  .btn-next { background: var(--green); color: #fff; flex: 1; }
+  .btn-next:hover { background: var(--green-dark); }
+  .btn-next:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
+  .field-error { font-size: 12px; color: var(--red); margin-top: 6px; display: none; }
+  .field-error.show { display: block; }
+  .thankyou { text-align: center; padding: 40px 20px; background: #fff; border-radius: var(--radius); border: 1px solid var(--gray-100); }
+  .ty-icon { width: 72px; height: 72px; background: var(--green-light); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+  .sync-status-box { border-radius: var(--radius-sm); padding: 14px 18px; margin-bottom: 20px; font-size: 14px; line-height: 1.7; }
+  .sync-pending { background: var(--amber-light); color: var(--amber-text); border: 1px solid var(--amber); }
+  .sync-success { background: var(--green-light); color: var(--green-text); border: 1px solid var(--green); }
+  .sync-fail { background: var(--red-light); color: var(--red-text); border: 1px solid var(--red); }
+  .ty-actions { display: flex; flex-direction: column; gap: 10px; max-width: 320px; margin: 0 auto; }
+  .btn-action { padding: 13px 20px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-green:hover { background: var(--green-dark); }
+  .btn-gray { background: var(--gray-100); color: var(--gray-700); }
+  .btn-gray:hover { background: var(--gray-200); }
+  @media (max-width: 480px) {
+    .container { padding: 16px 12px 80px; }
+    .cover-card { padding: 24px 18px; }
+    .section-body { padding: 16px; }
+    .scale-btn { width: 40px; height: 40px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="top-bar-inner">
+    <h1>Medic Drone Delivery Survey</h1>
+    <div class="status-badge status-online" id="status-badge">
+      <div class="dot"></div>
+      <span id="status-text">Online</span>
+    </div>
+  </div>
+  <div class="progress-wrap"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+</div>
+
+<div class="container">
+
+  <div class="banner banner-offline hidden" id="banner-offline">
+    <span class="banner-icon">⚠</span>
+    <span>You are offline. Your response will be saved on this device and sent automatically the moment you reconnect to the internet.</span>
+  </div>
+  <div class="banner banner-synced hidden" id="banner-synced">
+    <span class="banner-icon">✓</span>
+    <span id="banner-synced-text">Pending responses synced to Google Sheets.</span>
+  </div>
+
+  <!-- PAGE 0: Cover -->
+  <div class="page active" id="page-0">
+    <div class="cover-card">
+      <div class="cover-icon">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="13" fill="#1D9E75" opacity=".2"/>
+          <path d="M16 8v16M8 16h16" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>Drone-based medical delivery — health worker survey</h2>
+      <p class="tagline">This survey supports research into improving medical supply access for rural and island communities through drone delivery of medicines, vaccines, blood products, first aid kits, and ultrasound services.</p>
+      <div class="info-row">
+        <div class="info-pill">⏱ 10–15 minutes</div>
+        <div class="info-pill">🔒 Anonymous</div>
+        <div class="info-pill">📋 4 sections</div>
+        <div class="info-pill">📶 Works offline</div>
+      </div>
+      <div class="consent-box">
+        <strong>Confidentiality:</strong> All responses are completely anonymous and used for research purposes only. No identifying information will be shared or published. Participation is voluntary.
+      </div>
+      <label class="consent-check">
+        <input type="checkbox" id="consent-cb" onchange="checkConsent()">
+        <span>I understand this is anonymous research and I agree to participate</span>
+      </label>
+    </div>
+    <div class="nav-bar" style="justify-content:flex-end">
+      <button class="btn btn-next" id="btn-start" onclick="goTo(1)" disabled>Start survey →</button>
+    </div>
+  </div>
+
+  <!-- PAGE 1: Section A -->
+  <div class="page" id="page-1">
+    <div class="section-card">
+      <div class="section-head">
+        <div class="sec-num" style="background:#1D9E75">A</div>
+        <div>
+          <div class="sec-title">Respondent background</div>
+          <div class="sec-subtitle">Tell us about your role and facility</div>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="q">
+          <div class="q-label">A1. What is your role? <span class="req">*</span></div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="a1" value="Doctor / physician"><label>Doctor / physician</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Nurse / midwife"><label>Nurse / midwife</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Pharmacist / dispenser"><label>Pharmacist / dispenser</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Lab / diagnostic technician"><label>Laboratory / diagnostic technician</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Health facility administrator"><label>Health facility administrator / manager</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Community health worker"><label>Community health worker</label></label>
+            <label class="opt"><input type="radio" name="a1" value="Other"><label>Other</label></label>
+          </div>
+          <div class="field-error" id="err-a1">Please select an option to continue.</div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">A2. What type of facility do you work at?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="a2" value="Rural clinic / health centre"><label>Rural clinic / health centre</label></label>
+            <label class="opt"><input type="radio" name="a2" value="Island / remote clinic"><label>Island / remote clinic</label></label>
+            <label class="opt"><input type="radio" name="a2" value="District hospital"><label>District hospital</label></label>
+            <label class="opt"><input type="radio" name="a2" value="Regional / referral hospital"><label>Regional / referral hospital</label></label>
+            <label class="opt"><input type="radio" name="a2" value="Community health post"><label>Community health post</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">A3. How many years have you worked at your current facility?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="a3" value="Less than 1 year"><label>Less than 1 year</label></label>
+            <label class="opt"><input type="radio" name="a3" value="1–3 years"><label>1–3 years</label></label>
+            <label class="opt"><input type="radio" name="a3" value="4–7 years"><label>4–7 years</label></label>
+            <label class="opt"><input type="radio" name="a3" value="8 years or more"><label>8 years or more</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">A4. How far is your facility from the nearest large / referral hospital?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="a4" value="Less than 10 km"><label>Less than 10 km</label></label>
+            <label class="opt"><input type="radio" name="a4" value="10–30 km"><label>10–30 km</label></label>
+            <label class="opt"><input type="radio" name="a4" value="31–60 km"><label>31–60 km</label></label>
+            <label class="opt"><input type="radio" name="a4" value="More than 60 km"><label>More than 60 km</label></label>
+            <label class="opt"><input type="radio" name="a4" value="Island / only by boat or air"><label>Island / only accessible by boat or air</label></label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="nav-bar">
+      <button class="btn btn-back" onclick="goTo(0)">← Back</button>
+      <button class="btn btn-next" onclick="nextPage(1,['a1'])">Continue →</button>
+    </div>
+  </div>
+
+  <!-- PAGE 2: Section B -->
+  <div class="page" id="page-2">
+    <div class="section-card">
+      <div class="section-head">
+        <div class="sec-num" style="background:#D85A30">B</div>
+        <div>
+          <div class="sec-title">Emergency rates and response capacity</div>
+          <div class="sec-subtitle">How often emergencies occur and how your facility copes</div>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="q">
+          <div class="q-label">B1. On average, how many medical emergencies does your facility receive per month?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="b1" value="0–5"><label>0–5</label></label>
+            <label class="opt"><input type="radio" name="b1" value="6–15"><label>6–15</label></label>
+            <label class="opt"><input type="radio" name="b1" value="16–30"><label>16–30</label></label>
+            <label class="opt"><input type="radio" name="b1" value="More than 30"><label>More than 30</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">B2. Which types of emergencies are most common? <span style="font-size:12px;color:var(--gray-400)">(select all that apply)</span></div>
+          <div class="options">
+            <label class="opt"><input type="checkbox" name="b2" value="Maternal / obstetric emergencies"><label>Maternal / obstetric emergencies (haemorrhage, eclampsia)</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Trauma / accidents"><label>Trauma / accidents / injuries</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Severe infections / sepsis"><label>Severe infections / sepsis</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Neonatal emergencies"><label>Neonatal / newborn emergencies</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Cardiac / respiratory"><label>Cardiac or respiratory emergencies</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Disease outbreak / epidemic"><label>Disease outbreak / epidemic response</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Surgical emergencies"><label>Surgical emergencies</label></label>
+            <label class="opt"><input type="checkbox" name="b2" value="Other"><label>Other</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">B3. When a patient needs resources not available at your facility, how long does it typically take to get them?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="b3" value="Less than 1 hour"><label>Less than 1 hour</label></label>
+            <label class="opt"><input type="radio" name="b3" value="1–3 hours"><label>1–3 hours</label></label>
+            <label class="opt"><input type="radio" name="b3" value="3–6 hours"><label>3–6 hours</label></label>
+            <label class="opt"><input type="radio" name="b3" value="6–24 hours"><label>6–24 hours</label></label>
+            <label class="opt"><input type="radio" name="b3" value="More than 24 hours"><label>More than 24 hours</label></label>
+            <label class="opt"><input type="radio" name="b3" value="Resources usually unavailable entirely"><label>Resources are usually unavailable entirely</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">B4. In the past 12 months, have patients experienced serious harm or death due to delayed supplies?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="b4" value="Yes — multiple times"><label>Yes — this has happened multiple times</label></label>
+            <label class="opt"><input type="radio" name="b4" value="Yes — at least once"><label>Yes — at least once</label></label>
+            <label class="opt"><input type="radio" name="b4" value="Not to my knowledge"><label>Not to my knowledge</label></label>
+            <label class="opt"><input type="radio" name="b4" value="Unsure"><label>Unsure</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">B5. What are the biggest challenges your facility faces during emergencies or disease outbreaks?</div>
+          <textarea name="b5" placeholder="e.g. lack of blood supply, no transport, delayed referrals, poor communication..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="nav-bar">
+      <button class="btn btn-back" onclick="goTo(1)">← Back</button>
+      <button class="btn btn-next" onclick="nextPage(2,[])">Continue →</button>
+    </div>
+  </div>
+
+  <!-- PAGE 3: Section C -->
+  <div class="page" id="page-3">
+    <div class="section-card">
+      <div class="section-head">
+        <div class="sec-num" style="background:#534AB7">C</div>
+        <div>
+          <div class="sec-title">Medical supply — current status and gaps</div>
+          <div class="sec-subtitle">What your facility has, needs, and what is always in demand</div>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="q">
+          <div class="q-label">C1. How would you rate availability of the following supplies at your facility?</div>
+          <div class="q-hint">1 = never available &nbsp;·&nbsp; 3 = sometimes &nbsp;·&nbsp; 5 = always available</div>
+          <div class="grid-scroll">
+            <table class="rtable">
+              <thead><tr><th>Supply item</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr></thead>
+              <tbody id="supply-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">C2. Which supplies are most frequently out of stock? <span style="font-size:12px;color:var(--gray-400)">(select all that apply)</span></div>
+          <div class="options">
+            <label class="opt"><input type="checkbox" name="c2" value="Vaccines"><label>Vaccines (routine or emergency)</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="Blood and blood products"><label>Blood and blood products</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="Essential medicines"><label>Essential medicines (antibiotics, oxytocin, IV fluids)</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="First aid / wound care"><label>First aid and wound care supplies</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="Ultrasound / imaging access"><label>Ultrasound / diagnostic imaging access</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="PPE"><label>Personal protective equipment (PPE)</label></label>
+            <label class="opt"><input type="checkbox" name="c2" value="Lab reagents / test kits"><label>Laboratory reagents / test kits</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">C3. Does your facility currently have access to an ultrasound machine?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="c3" value="Yes — functional and regularly used"><label>Yes — functional and regularly used</label></label>
+            <label class="opt"><input type="radio" name="c3" value="Yes — broken or rarely used"><label>Yes — but currently broken or rarely used</label></label>
+            <label class="opt"><input type="radio" name="c3" value="No — patients referred elsewhere"><label>No — patients are referred elsewhere for scans</label></label>
+            <label class="opt"><input type="radio" name="c3" value="No — no ultrasound access in this area"><label>No — patients in this area have no access to ultrasound</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">C4. How often do pregnant women miss or delay ultrasound scans due to distance or cost?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="c4" value="Almost always — it is the norm here"><label>Almost always — it is the norm here</label></label>
+            <label class="opt"><input type="radio" name="c4" value="Often (more than half the time)"><label>Often (more than half the time)</label></label>
+            <label class="opt"><input type="radio" name="c4" value="Sometimes"><label>Sometimes</label></label>
+            <label class="opt"><input type="radio" name="c4" value="Rarely"><label>Rarely</label></label>
+            <label class="opt"><input type="radio" name="c4" value="Not applicable — adequate access exists"><label>Not applicable — adequate access exists</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">C5. Which medical supplies are in highest demand at your facility month after month?</div>
+          <textarea name="c5" placeholder="List the top 3–5 items your facility constantly needs..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="nav-bar">
+      <button class="btn btn-back" onclick="goTo(2)">← Back</button>
+      <button class="btn btn-next" onclick="nextPage(3,[])">Continue →</button>
+    </div>
+  </div>
+
+  <!-- PAGE 4: Section D -->
+  <div class="page" id="page-4">
+    <div class="section-card">
+      <div class="section-head">
+        <div class="sec-num" style="background:#BA7517">D</div>
+        <div>
+          <div class="sec-title">Drone delivery — perceptions and feasibility</div>
+          <div class="sec-subtitle">What you think about drone medical delivery</div>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="q">
+          <div class="q-label">D1. Before this survey, were you aware of drones being used for medical delivery?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="d1" value="Yes — know specific programmes e.g. Zipline"><label>Yes — I know of specific programmes (e.g. Zipline in Rwanda/Ghana)</label></label>
+            <label class="opt"><input type="radio" name="d1" value="Yes — heard about it generally"><label>Yes — I have heard about it generally</label></label>
+            <label class="opt"><input type="radio" name="d1" value="No — this is new to me"><label>No — this is new to me</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D2. If a drone could deliver supplies to your facility in 30–60 minutes, which would be most valuable? <span style="font-size:12px;color:var(--gray-400)">(select top 3)</span></div>
+          <div class="options">
+            <label class="opt"><input type="checkbox" name="d2" value="Emergency blood / blood products"><label>Emergency blood / blood products</label></label>
+            <label class="opt"><input type="checkbox" name="d2" value="Urgent medicines (oxytocin, antibiotics, IV fluids)"><label>Urgent medicines (oxytocin, antibiotics, IV fluids)</label></label>
+            <label class="opt"><input type="checkbox" name="d2" value="Vaccines (routine or outbreak)"><label>Vaccines (routine or outbreak response)</label></label>
+            <label class="opt"><input type="checkbox" name="d2" value="First aid kits / trauma supplies"><label>First aid kits / trauma supplies</label></label>
+            <label class="opt"><input type="checkbox" name="d2" value="Portable ultrasound or remote scan access"><label>Portable ultrasound or remote scan access</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D3. What concerns do you have about drone delivery? <span style="font-size:12px;color:var(--gray-400)">(select all that apply)</span></div>
+          <div class="options">
+            <label class="opt"><input type="checkbox" name="d3" value="Reliability — crashes or failure"><label>Reliability — what if the drone crashes or fails?</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Temperature control for vaccines or blood"><label>Temperature control for vaccines or blood products</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Weather conditions"><label>Weather conditions (rain, wind, storms)</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Security / theft"><label>Security / theft of delivered items</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Regulatory / legal approval"><label>Regulatory or legal approval in this country</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Staff training needed"><label>Staff training required to receive deliveries</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="Cost to facility or patient"><label>Cost of the service to the facility or patient</label></label>
+            <label class="opt"><input type="checkbox" name="d3" value="No major concerns"><label>I have no major concerns</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D4. How strongly do you agree with the following statements?</div>
+          <div class="q-hint">1 = strongly disagree &nbsp;·&nbsp; 5 = strongly agree</div>
+          <div class="grid-scroll">
+            <table class="rtable">
+              <thead><tr><th>Statement</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr></thead>
+              <tbody id="attitude-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D5. Overall, how would you rate the potential impact of a drone medical delivery system in your area? <span class="req">*</span></div>
+          <div class="q-hint">1 = no impact at all &nbsp;·&nbsp; 10 = life-changing, transformative impact</div>
+          <div class="scale-btns" id="d5-scale"></div>
+          <div class="scale-labels"><span>No impact</span><span>Transformative</span></div>
+          <div class="scale-val" id="d5-val"></div>
+          <div class="field-error" id="err-d5">Please select a rating to continue.</div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D6. If a drone delivery system were introduced, how likely would you be to use it regularly?</div>
+          <div class="options">
+            <label class="opt"><input type="radio" name="d6" value="Definitely would use it"><label>Definitely would use it</label></label>
+            <label class="opt"><input type="radio" name="d6" value="Likely would use it"><label>Likely would use it</label></label>
+            <label class="opt"><input type="radio" name="d6" value="Unsure — depends on reliability and cost"><label>Unsure — depends on reliability and cost</label></label>
+            <label class="opt"><input type="radio" name="d6" value="Unlikely"><label>Unlikely</label></label>
+            <label class="opt"><input type="radio" name="d6" value="Would not use it"><label>Would not use it</label></label>
+          </div>
+        </div>
+        <hr class="q-divider">
+        <div class="q">
+          <div class="q-label">D7. Is there anything else you would like the designers of this system to know?</div>
+          <textarea name="d7" placeholder="Your insights are valuable — please share any additional thoughts about your patients, facility needs, or community..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="nav-bar">
+      <button class="btn btn-back" onclick="goTo(3)">← Back</button>
+      <button class="btn btn-next" onclick="submitSurvey()">Submit survey ✓</button>
+    </div>
+  </div>
+
+  <!-- PAGE 5: Thank you -->
+  <div class="page" id="page-5">
+    <div class="thankyou">
+      <div class="ty-icon">
+        <svg viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="18" r="16" fill="#1D9E75" opacity=".15"/>
+          <path d="M10 18l6 6 10-12" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2 style="font-size:22px;font-weight:700;margin-bottom:10px">Thank you for your response!</h2>
+      <p style="font-size:15px;color:var(--gray-400);line-height:1.7;margin-bottom:20px">Your input will help shape a medical delivery system that could save lives in communities like yours.</p>
+      <div class="sync-status-box sync-pending" id="sync-box">
+        <strong id="sync-title">⏳ Saving your response...</strong><br>
+        <span id="sync-desc">Please wait a moment.</span>
+      </div>
+      <div class="ty-actions">
+        <button class="btn-action btn-green" onclick="exportCSV()">⬇ Download all responses as CSV</button>
+        <button class="btn-action btn-gray" onclick="anotherResponse()">+ Submit another response</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ══════════════════════════════════════════════════════
+  // ★  PASTE YOUR GOOGLE APPS SCRIPT URL BELOW  ★
+  // ══════════════════════════════════════════════════════
+  const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzwxJAHho_RS84FSWH7v8inc97LVb70kU2Lh8Xno9FgQ-emDPZUnBLeeOWhFBFdNDpTUg/exec';
+  // ══════════════════════════════════════════════════════
+
+  const STORAGE_KEY = 'medic_survey_responses';
+  const QUEUE_KEY   = 'medic_survey_queue';
+  let currentPage = 0;
+  let d5Value = null;
+
+  const supplyItems = [
+    'Essential medicines (antibiotics, IV fluids, oxytocin)',
+    'Vaccines (routine childhood and maternal)',
+    'Blood and blood products',
+    'First aid and wound care supplies',
+    'Ultrasound / diagnostic imaging',
+    'PPE and infection control supplies',
+    'Lab test kits / reagents'
+  ];
+  const attitudeItems = [
+    'Drone delivery would reduce preventable deaths in my area',
+    'My facility could safely receive and handle drone deliveries',
+    'Patients and community members would accept drones',
+    'Drone delivery is better than our current supply chain',
+    'I trust drones can safely carry medicines and blood products'
+  ];
+
+  function buildGrid(tbodyId, items, prefix) {
+    const tbody = document.getElementById(tbodyId);
+    items.forEach((item, i) => {
+      const tr = document.createElement('tr');
+      let cells = `<td>${item}</td>`;
+      for (let v = 1; v <= 5; v++) cells += `<td><input type="radio" name="${prefix}_${i}" value="${v}"></td>`;
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+  }
+  buildGrid('supply-tbody', supplyItems, 'c1');
+  buildGrid('attitude-tbody', attitudeItems, 'd4');
+
+  // Scale D5
+  const scaleWrap = document.getElementById('d5-scale');
+  const scaleLabels = ['','No impact','Very limited','Minimal','Some benefit','Moderate','Noticeable','Significant','High impact','Very high','Transformative'];
+  for (let i = 1; i <= 10; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'scale-btn'; btn.textContent = i; btn.type = 'button';
+    btn.onclick = () => {
+      d5Value = i;
+      document.querySelectorAll('.scale-btn').forEach((b, idx) => b.classList.toggle('sel', idx < i));
+      document.getElementById('d5-val').textContent = i + '/10 — ' + scaleLabels[i];
+      document.getElementById('err-d5').classList.remove('show');
+    };
+    scaleWrap.appendChild(btn);
+  }
+
+  function checkConsent() {
+    document.getElementById('btn-start').disabled = !document.getElementById('consent-cb').checked;
+  }
+
+  function goTo(n) {
+    document.getElementById('page-' + currentPage).classList.remove('active');
+    currentPage = n;
+    document.getElementById('page-' + n).classList.add('active');
+    document.getElementById('progress').style.width = Math.round((n / 4) * 100) + '%';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function nextPage(from, required) {
+    let valid = true;
+    required.forEach(name => {
+      const checked = document.querySelector(`input[name="${name}"]:checked`);
+      const err = document.getElementById('err-' + name);
+      if (!checked) { valid = false; if (err) err.classList.add('show'); }
+      else { if (err) err.classList.remove('show'); }
+    });
+    if (valid) goTo(from + 1);
+  }
+
+  document.querySelectorAll('.opt input').forEach(input => {
+    input.addEventListener('change', () => {
+      const name = input.getAttribute('name');
+      if (input.type === 'radio') {
+        document.querySelectorAll(`input[name="${name}"]`).forEach(i =>
+          i.closest('.opt').classList.toggle('selected', i.checked));
+      } else {
+        input.closest('.opt').classList.toggle('selected', input.checked);
+      }
+      const err = document.getElementById('err-' + name);
+      if (err && input.checked) err.classList.remove('show');
+    });
+  });
+
+  function collectAll() {
+    const data = { timestamp: new Date().toISOString() };
+    document.querySelectorAll('input[type=radio]:checked').forEach(i => { data[i.name] = i.value; });
+    const cm = {};
+    document.querySelectorAll('input[type=checkbox]:checked').forEach(i => {
+      if (!cm[i.name]) cm[i.name] = [];
+      cm[i.name].push(i.value);
+    });
+    Object.keys(cm).forEach(k => { data[k] = cm[k].join('; '); });
+    document.querySelectorAll('textarea').forEach(t => { if (t.value.trim()) data[t.name] = t.value.trim(); });
+    if (d5Value) data['d5_impact_rating'] = d5Value;
+    return data;
+  }
+
+  function saveLocal(entry) {
+    let all = [];
+    try { all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) {}
+    all.push(entry);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(all)); } catch(e) {}
+  }
+
+  function addToQueue(entry) {
+    let queue = [];
+    try { queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch(e) {}
+    queue.push(entry);
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); } catch(e) {}
+  }
+
+  function clearQueue() {
+    try { localStorage.removeItem(QUEUE_KEY); } catch(e) {}
+  }
+
+  function getQueue() {
+    try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch(e) { return []; }
+  }
+
+  async function sendToSheet(entry) {
+    if (SHEET_URL === 'PASTE_YOUR_APPS_SCRIPT_URL_HERE') return false;
+    try {
+      await fetch(SHEET_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      });
+      return true;
+    } catch(e) { return false; }
+  }
+
+  async function flushQueue() {
+    const queue = getQueue();
+    if (!queue.length || !navigator.onLine) return;
+    let allSent = true;
+    for (const entry of queue) {
+      const ok = await sendToSheet(entry);
+      if (!ok) { allSent = false; break; }
+    }
+    if (allSent) {
+      clearQueue();
+      const banner = document.getElementById('banner-synced');
+      document.getElementById('banner-synced-text').textContent =
+        queue.length + ' response(s) synced to Google Sheets automatically.';
+      banner.classList.remove('hidden');
+      setTimeout(() => banner.classList.add('hidden'), 5000);
+    }
+  }
+
+  async function submitSurvey() {
+    if (!d5Value) {
+      document.getElementById('err-d5').classList.add('show');
+      document.getElementById('d5-scale').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    const entry = collectAll();
+    saveLocal(entry);
+
+    goTo(5);
+    updateSyncBox('saving');
+
+    if (navigator.onLine) {
+      const ok = await sendToSheet(entry);
+      updateSyncBox(ok ? 'success' : 'queued');
+      if (!ok) addToQueue(entry);
+    } else {
+      addToQueue(entry);
+      updateSyncBox('queued');
+    }
+  }
+
+  function updateSyncBox(state) {
+    const box = document.getElementById('sync-box');
+    const title = document.getElementById('sync-title');
+    const desc = document.getElementById('sync-desc');
+    box.className = 'sync-status-box';
+    if (state === 'saving') {
+      box.classList.add('sync-pending');
+      title.textContent = '⏳ Sending to Google Sheets...';
+      desc.textContent = 'Please wait a moment.';
+    } else if (state === 'success') {
+      box.classList.add('sync-success');
+      title.textContent = '✓ Response sent to Google Sheets!';
+      desc.textContent = 'It is now visible in your spreadsheet in real time.';
+    } else if (state === 'queued') {
+      box.classList.add('sync-pending');
+      title.textContent = '📥 Response saved on this device';
+      desc.textContent = 'No internet right now. It will be sent to Google Sheets automatically the moment this device reconnects.';
+    }
+  }
+
+  function exportCSV() {
+    let all = [];
+    try { all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) {}
+    if (!all.length) { alert('No responses saved yet.'); return; }
+    const keys = [...new Set(all.flatMap(r => Object.keys(r)))];
+    const rows = [keys.join(',')];
+    all.forEach(r => {
+      rows.push(keys.map(k => '"' + String(r[k] || '').replace(/"/g, '""') + '"').join(','));
+    });
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'medic_survey_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+  }
+
+  function anotherResponse() {
+    document.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(i => {
+      i.checked = false;
+      if (i.closest('.opt')) i.closest('.opt').classList.remove('selected');
+    });
+    document.querySelectorAll('textarea').forEach(t => t.value = '');
+    document.querySelectorAll('.scale-btn').forEach(b => b.classList.remove('sel'));
+    document.getElementById('d5-val').textContent = '';
+    document.getElementById('consent-cb').checked = false;
+    d5Value = null;
+    document.getElementById('btn-start').disabled = true;
+    goTo(0);
+  }
+
+  // Connection monitoring
+  function setOnline() {
+    const badge = document.getElementById('status-badge');
+    badge.className = 'status-badge status-online';
+    document.getElementById('status-text').textContent = 'Online';
+    document.getElementById('banner-offline').classList.add('hidden');
+    flushQueue();
+  }
+  function setOffline() {
+    const badge = document.getElementById('status-badge');
+    badge.className = 'status-badge status-offline';
+    document.getElementById('status-text').textContent = 'Offline';
+    document.getElementById('banner-offline').classList.remove('hidden');
+  }
+  window.addEventListener('online', setOnline);
+  window.addEventListener('offline', setOffline);
+  if (!navigator.onLine) setOffline();
+  else flushQueue();
+</script>
+</body>
+</html>
