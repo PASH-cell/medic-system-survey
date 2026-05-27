@@ -720,23 +720,17 @@
   }
 
   // Connection monitoring
-  function setOnline() {
-    const badge = document.getElementById('status-badge');
-    badge.className = 'status-badge status-online';
-    document.getElementById('status-text').textContent = 'Online';
-    document.getElementById('banner-offline').classList.add('hidden');
-    flushQueue();
+async function checkRealConnection() {
+  try {
+    const response = await fetch('https://www.google.com/favicon.ico', { 
+      method: 'HEAD', 
+      mode: 'no-cors' 
+    });
+    return true;
+  } catch {
+    return false;
   }
-  function setOffline() {
-    const badge = document.getElementById('status-badge');
-    badge.className = 'status-badge status-offline';
-    document.getElementById('status-text').textContent = 'Offline';
-    document.getElementById('banner-offline').classList.remove('hidden');
-  }
-  window.addEventListener('online', setOnline);
-  window.addEventListener('offline', setOffline);
-  if (!navigator.onLine) setOffline();
-  else flushQueue();
+}
 </script>
 </body>
 </html>
